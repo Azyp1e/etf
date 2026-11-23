@@ -2,8 +2,8 @@ name: 更新行情快照
 
 on:
   schedule:
-    # UTC 07:35 = 北京时间 15:35，收盘后运行
-    - cron: "35 7 * * 1-5"
+    # UTC 09:00 = 北京时间 17:00，每天运行
+    - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:
       share_days:

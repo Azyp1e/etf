@@ -160,12 +160,14 @@ python3 scripts/update_data.py               # 把历史写进快照
 
 ## 自动更新
 
-`.github/workflows/update.yml` 会在每个工作日 **15:35（北京时间）** 运行：
+`.github/workflows/update.yml` 会在每天 **17:00（北京时间）** 运行：
 
 ```yaml
 schedule:
-  - cron: "35 7 * * 1-5"   # UTC 07:35 = 北京 15:35
+  - cron: "0 9 * * *"   # UTC 09:00 = 北京 17:00
 ```
+
+周末和节假日也会跑，但只会把快照更新为最近一个交易日的数据。
 
 - GitHub 的定时任务可能延迟几分钟到十几分钟，属正常现象
 - 也可以在 Actions 页面手动 **Run workflow**
