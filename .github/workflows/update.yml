@@ -5,6 +5,11 @@ on:
     # UTC 07:35 = 北京时间 15:35，收盘后运行
     - cron: "35 7 * * 1-5"
   workflow_dispatch:
+    inputs:
+      share_days:
+        description: "份额回填天数（首次填 400，日常留空）"
+        required: false
+        default: "10"
 
 permissions:
   contents: write
@@ -24,6 +29,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: 更新份额历史（Tushare）
+        env:
+          TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+        run: |
+          if [ -z "$TUSHARE_TOKEN" ]; then
+            echo "未配置 TUSHARE_TOKEN，跳过份额回填"
+            exit 0
+          fi
+          python scripts/fetch_shares.py --days "${{ github.event.inputs.share_days || 10 }}"
 
       - name: 抓取行情并生成快照
         run: python scripts/update_data.py

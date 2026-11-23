@@ -304,7 +304,10 @@ def main():
         now = now_bj()
         after_close = now.hour * 60 + now.minute >= 15 * 60 + 5
         if q["date"] != f"{now:%Y%m%d}" or after_close:
-            shares_hist.setdefault(q["date"], {})[code] = shares_yi
+            row = shares_hist.setdefault(q["date"], {})
+            # Tushare 已经写入的收盘份额优先，避免被行情商的滞后份额覆盖
+            if code not in row:
+                row[code] = shares_yi
 
         items.append(
             {
@@ -329,6 +332,7 @@ def main():
                 "shares_yi": shares_yi,
                 "prev_shares_yi": prev_shares,
                 "subscr_net_yi": subscr,
+                "shares_stale": False,
                 "ts": q["ts"],
                 "date": q["date"],
                 "shape": shape,
@@ -342,6 +346,25 @@ def main():
         sys.exit("没有任何可用数据，未写入快照")
 
     items.sort(key=lambda it: (0 if it["group"] == "core" else 1, -it["mktcap_yi"]))
+
+    # 份额源自检：同一市场 ≥70% 的标的两日份额完全相同，通常不是“没有申赎”，
+    # 而是行情商的份额字段没有按日更新。此时不展示数字，避免误导。
+    for prefix in ("sh", "sz"):
+        group = [
+            it for it in items
+            if it["tcode"].startswith(prefix) and it.get("prev_shares_yi")
+        ]
+        if len(group) < 2:
+            continue
+        same = sum(
+            1 for it in group
+            if abs(it["shares_yi"] - it["prev_shares_yi"]) < 1e-6
+        )
+        if same / len(group) >= 0.7:
+            for it in group:
+                it["subscr_net_yi"] = None
+                it["shares_stale"] = True
+            log(f"  ! {prefix} 市场 {same}/{len(group)} 只份额与上一快照相同，标记「份额源未日更」")
 
     snapshot = {
         "generated_at": f"{now_bj():%Y-%m-%d %H:%M:%S}",

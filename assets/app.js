@@ -288,7 +288,9 @@
           "<td class=\"num\"><span class=\"" + pctCls + "\">" + (it.pct > 0 ? "+" : "") + fmt(it.pct, 2) + "%</span></td>" +
           "<td class=\"num\">" + fmt(it.shares_yi, 1) +
             (it.subscr_net_yi === null || it.subscr_net_yi === undefined
-              ? "<span class=\"sub\">较上日 —</span>"
+              ? (it.shares_stale
+                ? "<span class=\"sub\">份额源未日更</span>"
+                : "<span class=\"sub\">较上日 —</span>")
               : "<span class=\"sub " + subCls + "\">申赎 " + signed(it.subscr_net_yi, 1) + " 亿</span>") + "</td>" +
           "<td class=\"num\">" + spark(it.hist) + "</td>" +
           "</tr>";
@@ -299,7 +301,8 @@
     var tradingTxt = st.trading ? "盘中数据每 20 秒刷新，" : "";
     $("listHint").textContent = "共 " + S.items.length + " 只 · " + tradingTxt + "同时点倍数越高代表相对 20 日均额越放量";
     $("tableNote").textContent =
-      "份额为腾讯行情场内份额；申赎 =（本次快照份额 − 上一快照份额）× 现价，是估算值，首次运行尚无历史对比。" +
+      "份额为腾讯行情场内份额；申赎 =（本次快照份额 − 上一快照份额）× 现价，是估算值。" +
+      "同一市场 ≥70% 的标的两日份额完全相同时，视为行情源未日更，不展示申赎数字。" +
       "主动买卖差 =（外盘 − 内盘）÷（外盘 + 内盘）× 成交额，仅为逐笔成交方向推算，不是资金净流入。";
   }
 
@@ -379,12 +382,212 @@
       " · 结论为量价推测，仅供研究，不构成投资建议。";
   }
 
+  /* ---------- 份额图表 ---------- */
+  var shareRange = 242;
+
+  function shareSeries(n) {
+    var H = S.shares_history || {};
+    var dates = Object.keys(H).sort();
+    if (dates.length < 2) return null;
+
+    var core = S.items.filter(function (it) { return it.group === "core"; })
+      .map(function (it) { return it.code; });
+    if (!core.length) {
+      core = Object.keys(H[dates[dates.length - 1]] || {});
+    }
+    if (!core.length) return null;
+
+    var take = Math.max(2, Math.min(n + 1, dates.length));
+    var wd = dates.slice(dates.length - take);
+    var last = {}, series = [];
+
+    for (var i = 0; i < wd.length; i++) {
+      var row = H[wd[i]] || {};
+      for (var j = 0; j < core.length; j++) {
+        var c = core[j];
+        if (row[c] !== undefined && row[c] !== null) last[c] = row[c];
+      }
+      var sum = 0, has = false;
+      for (var k = 0; k < core.length; k++) {
+        if (last[core[k]] !== undefined) { sum += last[core[k]]; has = true; }
+      }
+      series.push({ date: wd[i], total: has ? sum : null });
+    }
+
+    while (series.length && series[0].total === null) series.shift();
+    if (series.length < 2) return null;
+
+    var deltas = [];
+    for (var m = 1; m < series.length; m++) {
+      if (series[m].total !== null && series[m - 1].total !== null) {
+        deltas.push({ date: series[m].date, d: series[m].total - series[m - 1].total });
+      }
+    }
+
+    var base = series[0].total || 1;
+    var idx = series.map(function (p) {
+      return { date: p.date, v: p.total === null ? null : 100 * p.total / base };
+    });
+
+    return { series: series, deltas: deltas, idx: idx, base: base, count: core.length };
+  }
+
+  function niceCeil(v) {
+    if (!(v > 0)) return 1;
+    var p = Math.pow(10, Math.floor(Math.log(v) / Math.LN10));
+    var steps = [1, 2, 2.5, 5, 10];
+    for (var i = 0; i < steps.length; i++) {
+      if (steps[i] * p >= v) return steps[i] * p;
+    }
+    return 10 * p;
+  }
+
+  function axisDate(d, big) {
+    if (!d || d.length !== 8) return d || "";
+    return big ? d.slice(2, 4) + "/" + d.slice(4, 6) : d.slice(4, 6) + "-" + d.slice(6, 8);
+  }
+
+  function axisLabels(dates, xOf, y, big) {
+    var n = dates.length;
+    var picks = [0, Math.round((n - 1) / 3), Math.round(2 * (n - 1) / 3), n - 1];
+    var seen = {}, out = "";
+    for (var i = 0; i < picks.length; i++) {
+      var k = picks[i];
+      if (seen[k]) continue;
+      seen[k] = 1;
+      out += '<text x="' + xOf(k).toFixed(1) + '" y="' + y + '" text-anchor="' +
+        (k === 0 ? "start" : k === n - 1 ? "end" : "middle") +
+        '" font-size="10" fill="#8b93a1">' + axisDate(dates[k], big) + "</text>";
+    }
+    return out;
+  }
+
+  function deltaChart(deltas) {
+    var W = 560, H = 190, L = 44, R = 8, T = 12, B = 26;
+    var pw = W - L - R, ph = H - T - B;
+    var maxAbs = 0;
+    for (var i = 0; i < deltas.length; i++) {
+      maxAbs = Math.max(maxAbs, Math.abs(deltas[i].d));
+    }
+    maxAbs = niceCeil(maxAbs || 1);
+    var mid = T + ph / 2;
+    var bw = pw / deltas.length;
+    var bars = "", grid = "";
+
+    [-maxAbs, 0, maxAbs].forEach(function (v) {
+      var y = mid - v / maxAbs * (ph / 2);
+      grid += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y.toFixed(1) +
+        '" y2="' + y.toFixed(1) + '" stroke="' + (v === 0 ? "#d9dee8" : "#eef1f6") +
+        '" stroke-width="1"' + (v === 0 ? "" : ' stroke-dasharray="3 3"') + "/>";
+      grid += '<text x="' + (L - 6) + '" y="' + (y + 3.5).toFixed(1) +
+        '" text-anchor="end" font-size="9.5" fill="#8b93a1">' + fmt(v, 0) + "</text>";
+    });
+
+    for (var j = 0; j < deltas.length; j++) {
+      var p = deltas[j], v = p.d;
+      var h = Math.abs(v) / maxAbs * (ph / 2);
+      var x = L + j * bw + bw * 0.18;
+      var w = Math.max(1, bw * 0.64);
+      var y = v >= 0 ? mid - h : mid;
+      bars += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + w.toFixed(1) +
+        '" height="' + Math.max(0.8, h).toFixed(1) + '" rx="1" fill="' +
+        (v >= 0 ? "#e11d48" : "#0e9f6e") + '" opacity="' + (v >= 0 ? 0.82 : 0.78) +
+        '"><title>' + p.date + "  " + signed(v, 1) + " 亿份</title></rect>";
+    }
+
+    var big = deltas.length > 1 && deltas[0].date.slice(0, 4) !== deltas[deltas.length - 1].date.slice(0, 4);
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="每日份额变化">' +
+      grid + bars + axisLabels(deltas.map(function (p) { return p.date; }),
+        function (i) { return L + i * bw + bw / 2; }, H - 8, big) + "</svg>";
+  }
+
+  function indexChart(idx) {
+    var pts = idx.filter(function (p) { return p.v !== null; });
+    if (pts.length < 2) return "";
+    var W = 560, H = 190, L = 44, R = 8, T = 12, B = 26;
+    var pw = W - L - R, ph = H - T - B;
+    var vals = pts.map(function (p) { return p.v; });
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+    var pad = (hi - lo) * 0.1 || 1;
+    var min = lo - pad, max = hi + pad;
+    var n = pts.length;
+
+    function x(i) { return L + i / (n - 1) * pw; }
+    function y(v) { return T + ph - (v - min) / (max - min) * ph; }
+
+    var path = "";
+    for (var i = 0; i < n; i++) {
+      path += (i ? "L" : "M") + x(i).toFixed(1) + "," + y(pts[i].v).toFixed(1);
+    }
+    var area = path + " L" + x(n - 1).toFixed(1) + "," + (T + ph) + " L" + L + "," + (T + ph) + " Z";
+
+    var grid = "";
+    [lo, (lo + hi) / 2, hi].forEach(function (v) {
+      var yy = y(v);
+      grid += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + yy.toFixed(1) +
+        '" y2="' + yy.toFixed(1) + '" stroke="#eef1f6" stroke-width="1"/>';
+      grid += '<text x="' + (L - 6) + '" y="' + (yy + 3.5).toFixed(1) +
+        '" text-anchor="end" font-size="9.5" fill="#8b93a1">' + fmt(v, 1) + "</text>";
+    });
+
+    var baseline = "";
+    if (100 >= min && 100 <= max) {
+      var by = y(100);
+      baseline = '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + by.toFixed(1) +
+        '" y2="' + by.toFixed(1) + '" stroke="#c7ccd8" stroke-width="1" stroke-dasharray="4 3"/>';
+    }
+
+    var big = pts[0].date.slice(0, 4) !== pts[n - 1].date.slice(0, 4);
+    var last = pts[n - 1];
+    var label = '<text x="' + (W - R) + '" y="' + (T + 8) + '" text-anchor="end" font-size="10" fill="#4f46e5" font-weight="700">' +
+      fmt(last.v, 1) + "</text>";
+
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="加仓指数">' +
+      '<defs><linearGradient id="idxFill" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="#4f46e5" stop-opacity="0.18"/>' +
+      '<stop offset="100%" stop-color="#4f46e5" stop-opacity="0"/></linearGradient></defs>' +
+      grid + baseline +
+      '<path d="' + area + '" fill="url(#idxFill)"/>' +
+      '<path d="' + path + '" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<circle cx="' + x(n - 1).toFixed(1) + '" cy="' + y(last.v).toFixed(1) + '" r="3.2" fill="#4f46e5"/>' +
+      '<circle cx="' + x(n - 1).toFixed(1) + '" cy="' + y(last.v).toFixed(1) + '" r="3.2" fill="none" stroke="#fff" stroke-width="1.5"/>' +
+      label +
+      axisLabels(pts.map(function (p) { return p.date; }), x, H - 8, big) + "</svg>";
+  }
+
+  function renderShareCharts() {
+    var deltaEl = $("chartDelta"), idxEl = $("chartIndex");
+    if (!deltaEl || !idxEl) return;
+    var data = shareSeries(shareRange);
+
+    if (!data || !data.deltas.length) {
+      var empty = '<div class="chart-empty">还没有足够的份额历史。<br>先运行 ' +
+        "<code>python3 scripts/fetch_shares.py --days 400</code> 回填。</div>";
+      deltaEl.innerHTML = empty;
+      idxEl.innerHTML = empty;
+      $("shareHint").textContent = "等待份额历史（Tushare）";
+      $("chartNote").textContent = "份额历史来自 Tushare fund_share；未配置 token 时只显示腾讯当日快照。";
+      return;
+    }
+
+    deltaEl.innerHTML = deltaChart(data.deltas);
+    idxEl.innerHTML = indexChart(data.idx);
+
+    var first = data.series[0], last = data.series[data.series.length - 1];
+    $("shareHint").textContent = "核心 " + data.count + " 只 · " +
+      fmtDate(first.date) + " ~ " + fmtDate(last.date);
+    $("chartNote").textContent =
+      "核心宽基合计份额（亿份）· 每日变化 = 当日份额 − 前一交易日；正数净申购、负数净赎回。" +
+      "加仓指数 = 区间首日归一为 100 · 数据：Tushare fund_share（万份换算）。";
+  }
+
   function renderAll() {
     if (!S) return;
     var st = marketState();
     renderVerdict(st);
     renderTable(st);
     renderRank(st);
+    renderShareCharts();
     renderStatus(st);
   }
 
@@ -417,7 +620,15 @@
         it.shares = shares;
         it.shares_yi = shares / 1e8;
         if (it.prev_shares_yi && price) {
-          it.subscr_net_yi = Math.round((shares - it.prev_shares_yi * 1e8) * price / 1e8 * 100) / 100;
+          // 份额快照只保留 4 位小数，误差小于 0.0001 亿份（1 万股）视为没变化
+          var prevYi = it.prev_shares_yi;
+          var nextYi = shares / 1e8;
+          if (Math.abs(nextYi - prevYi) >= 0.0001) {
+            it.subscr_net_yi = Math.round((nextYi - prevYi) * price * 100) / 100;
+            it.shares_stale = false;
+          } else if (!it.shares_stale) {
+            it.subscr_net_yi = 0;
+          }
         }
       }
       got++;
@@ -513,6 +724,22 @@
     if (!this.checked) clearTimeout(timer);
     schedule();
   });
+
+  var rangeEl = $("shareRange");
+  if (rangeEl) {
+    rangeEl.addEventListener("click", function (e) {
+      var btn = e.target.closest ? e.target.closest("button") : null;
+      if (!btn || !this.contains(btn)) return;
+      var n = parseInt(btn.getAttribute("data-n"), 10);
+      if (!n) return;
+      shareRange = n;
+      var btns = this.querySelectorAll("button");
+      for (var i = 0; i < btns.length; i++) {
+        btns[i].classList.toggle("on", btns[i] === btn);
+      }
+      renderShareCharts();
+    });
+  }
 
   loadSnapshot();
 })();

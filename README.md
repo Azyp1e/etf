@@ -11,6 +11,7 @@
 - **今日结论**：核心宽基合计成交额、同时点倍数、放量/缩量只数、主动买卖差
 - **观察清单**：12 只宽基 ETF，可搜索、按范围筛选、按倍数/成交额/涨跌/规模排序
 - **放量排行**：横向条形图，1.0× 基准线，一眼看出谁在放量
+- **份额历史**：Tushare 每日份额回填一年，「每日份额变化 + 加仓指数」两张图，支持 3M / 6M / 1Y
 - **盘中实时**：交易时段每 20 秒通过腾讯行情刷新（JSONP，无跨域问题）
 - **零依赖**：Python 只用标准库，前端只用原生 JS
 
@@ -19,6 +20,9 @@
 要求 Python 3.8+，不需要安装任何第三方包。
 
 ```bash
+# 0.（可选）回填一年每日份额，需要 Tushare token 与 2000 积分
+python3 scripts/fetch_shares.py --days 400
+
 # 1. 抓取行情、计算 20 日均额、生成 data/snapshot.js
 python3 scripts/update_data.py
 
@@ -40,9 +44,10 @@ etf/
 │   └── style.css             # 样式（响应式）
 ├── config/etfs.json          # 标的清单与分组
 ├── scripts/update_data.py    # 抓行情 → 算指标 → 写快照
+├── scripts/fetch_shares.py   # Tushare 每日份额回填 / 增量
 ├── data/
 │   ├── snapshot.js           # 生成物：window.SNAPSHOT
-│   └── shares_history.json   # 每日收盘份额（申赎计算用）
+│   └── shares_history.json   # 每日份额（Tushare + 腾讯收盘快照）
 ├── docs/preview.png
 └── .github/workflows/update.yml
 ```
@@ -84,9 +89,26 @@ etf/
 
 ### 份额 / 申赎
 
-份额来自腾讯行情的场内份额。申赎 = `(本次快照份额 − 上一快照份额) × 现价`，是份额变化的市值估算，需要连续两日运行脚本才有值。
+**历史份额**来自 Tushare `fund_share`（沪深 ETF 每日基金份额，单位万份，除以 10000 得亿份），由 `scripts/fetch_shares.py` 回填 / 增量更新；**表格实时份额**来自腾讯行情。
 
-脚本**只在收盘后（15:05 之后）记录份额**，避免盘中不完整的快照污染次日计算；周末运行会记录最近交易日的收盘份额。
+申赎 = `(本次快照份额 − 上一快照份额) × 现价`，是份额变化的市值估算。脚本**只在收盘后（15:05 之后）记录腾讯份额**，避免盘中不完整的快照污染次日计算；周末运行会记录最近交易日的收盘份额。
+
+自检：同一市场 ≥70% 的标的两日份额完全相同时，页面会标「份额源未日更」而不给数字——这通常是行情商的份额字段没有按日更新，不应解读为「没有申赎」。
+
+#### Tushare 配置
+
+`fund_share` 需要至少 2000 积分。Token 读取顺序：环境变量 `TUSHARE_TOKEN` → `~/.config/etf/tushare_token`。
+
+```bash
+mkdir -p ~/.config/etf
+printf '%s' '你的 token' > ~/.config/etf/tushare_token
+chmod 600 ~/.config/etf/tushare_token
+
+python3 scripts/fetch_shares.py --days 400   # 回填一年
+python3 scripts/update_data.py               # 把历史写进快照
+```
+
+没有 token 时，脚本会给出提示并退出，页面只显示腾讯快照积累的份额。
 
 ## 配置自己的标的
 
@@ -151,19 +173,22 @@ schedule:
 - 数据没有变化时不会产生空提交
 - 定时任务使用仓库自带的 `GITHUB_TOKEN`，无需额外配置密钥
 - 数据提交后会调用 Pages API 显式触发一次重建：`GITHUB_TOKEN` 推送的提交不会自动触发 Pages 构建，不补这一步线上会停留在旧快照
+- 份额增量更新使用 `TUSHARE_TOKEN`：在 **Settings → Secrets and variables → Actions** 新增同名 secret；未配置时自动跳过
+- 首次回填：Actions → 更新行情快照 → **Run workflow**，`share_days` 填 `400`；日常留空（默认 10 天）
 
 ## 已知限制
 
 - **沪市份额不一定日更**：实测部分交易日沪市 ETF 的份额字段整片不变，这通常不是「没有申赎」，而是行情源未更新。看到整列不变时不要下结论。
 - **新浪 5 分钟 K 线会限流**：脚本对每只 ETF 重试 3 次；仍失败时沿用上一份快照的 20 日均额与日内曲线，并在快照里标记 `basis_stale`。
-- **首次运行没有申赎**：需要连续两个收盘日的数据，`shares_history.json` 积累后才会显示。
+- **Tushare 需要 2000 积分**：`fund_share` 不是免费接口；积分不足时份额图会为空，但表格仍用腾讯快照逐日累积。
+- **份额口径**：Tushare 份额通常在收盘后一段时间更新，当天（T 日）可能仍是 T−1 的数值，页面会用腾讯快照补当天。
 - **份额与规模是行情口径**：规模 = 价格 × 场内份额，不是基金净值；与基金公司公告可能不一致。
 - **接口可能变更**：第三方公开接口没有稳定性承诺，字段或限流策略变化时需要调整 `scripts/update_data.py`。
 
 ## 下一步可以加
 
-- 份额变化柱状图 / 加仓指数（需要积累一段时间的 `shares_history.json`）
-- 单只 ETF 详情页（成交额趋势、日内曲线）
+- 单只 ETF 详情页（成交额趋势、日内曲线、份额变化）
+- 多 ETF 对比（份额变化、成交额倍数）
 - 自选列表与本地偏好（`localStorage`）
 - 收盘后自动生成当日复盘文案
 
@@ -171,4 +196,3 @@ schedule:
 
 本项目仅用于个人研究和技术演示。页面所有结论均为基于公开行情的量价推测，不能证明任何机构当日是否交易，**不构成投资建议**。行情数据来自腾讯、新浪等第三方公开接口，可能延迟、缺失或存在口径差异，请以基金公司公告与交易所披露为准。投资有风险。
 
-<!-- trigger pages build -->
