@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 concurrency:
   group: update-snapshot
@@ -38,3 +39,9 @@ jobs:
           git add data/snapshot.js data/shares_history.json
           git commit -m "data: update $(TZ=Asia/Shanghai date +%Y-%m-%d)"
           git push
+
+      # GITHUB_TOKEN 推送的提交不会自动触发 Pages 构建，必须显式触发一次
+      - name: 触发 Pages 重新构建
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh api --method POST "repos/${{ github.repository }}/pages/builds" --jq '.status'
