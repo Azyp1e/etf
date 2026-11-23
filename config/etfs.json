@@ -1,0 +1,17 @@
+{
+  "title": "宽基 ETF 成交额追踪",
+  "items": [
+    { "code": "510300", "tcode": "sh510300", "name": "沪深300ETF华泰柏瑞", "index": "沪深300", "group": "core" },
+    { "code": "510310", "tcode": "sh510310", "name": "沪深300ETF易方达", "index": "沪深300", "group": "core" },
+    { "code": "159919", "tcode": "sz159919", "name": "沪深300ETF嘉实", "index": "沪深300", "group": "core" },
+    { "code": "510330", "tcode": "sh510330", "name": "沪深300ETF华夏", "index": "沪深300", "group": "core" },
+    { "code": "510050", "tcode": "sh510050", "name": "上证50ETF华夏", "index": "上证50", "group": "core" },
+    { "code": "510500", "tcode": "sh510500", "name": "中证500ETF南方", "index": "中证500", "group": "core" },
+    { "code": "512100", "tcode": "sh512100", "name": "中证1000ETF南方", "index": "中证1000", "group": "core" },
+    { "code": "159915", "tcode": "sz159915", "name": "创业板ETF易方达", "index": "创业板指", "group": "core" },
+    { "code": "588000", "tcode": "sh588000", "name": "科创50ETF华夏", "index": "科创50", "group": "core" },
+    { "code": "510880", "tcode": "sh510880", "name": "红利ETF华泰柏瑞", "index": "上证红利", "group": "extended" },
+    { "code": "512890", "tcode": "sh512890", "name": "红利低波ETF华泰柏瑞", "index": "红利低波", "group": "extended" },
+    { "code": "515180", "tcode": "sh515180", "name": "红利ETF易方达", "index": "中证红利", "group": "extended" }
+  ]
+}

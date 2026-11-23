@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ETF 成交额追踪 · 今日放量了吗</title>
+<meta name="description" content="宽基 ETF 成交额与份额跟踪：把盘中成交额与 20 日均额做同时点对齐，判断今天是否放量。">
+<meta name="theme-color" content="#f6f7fb">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%234f46e5'/%3E%3Cpath d='M7 21l5-6 4 3 4-7 5 5' fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main class="page">
+
+  <header class="top">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 16.5l4.5-5 3.5 2.6L16 8l4 4"/>
+          <path d="M4 20h16"/>
+        </svg>
+      </span>
+      <div class="brand-text">
+        <h1>ETF 成交额追踪</h1>
+        <p>宽基 ETF · 同时点对比 20 日均额</p>
+      </div>
+    </div>
+    <div class="status">
+      <span class="pill" id="statusPill"><i></i><span id="statusText">载入中</span></span>
+      <span class="stamp" id="stamp">—</span>
+    </div>
+  </header>
+
+  <section class="verdict flat" id="verdict" aria-live="polite">
+    <div class="verdict-top">
+      <div class="verdict-copy">
+        <div class="eyebrow">
+          <span>今日结论</span><span class="sep"></span><span id="asofText">—</span>
+        </div>
+        <h2 id="vTitle">正在计算…</h2>
+        <p id="vReason">正在载入行情快照，请稍候。</p>
+      </div>
+      <div class="datebox">
+        <b id="vDate">—</b>
+        <span>快照交易日</span>
+      </div>
+    </div>
+    <div class="metrics" id="metrics"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div class="panel-title">
+        <h3>观察清单</h3>
+        <p id="listHint">—</p>
+      </div>
+      <div class="controls">
+        <label class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>
+          </svg>
+          <input id="q" type="search" placeholder="搜索代码 / 名称" autocomplete="off" aria-label="搜索 ETF">
+        </label>
+        <select id="group" aria-label="范围">
+          <option value="all">全部标的</option>
+          <option value="core">核心宽基</option>
+          <option value="extended">扩展观察</option>
+        </select>
+        <select id="sort" aria-label="排序">
+          <option value="ratio">按同时点倍数</option>
+          <option value="amount">按成交额</option>
+          <option value="pct">按涨跌幅</option>
+          <option value="mktcap">按规模</option>
+          <option value="name">按名称</option>
+        </select>
+        <button id="refresh" class="btn" type="button">刷新</button>
+        <label class="switch"><input type="checkbox" id="auto" checked><span>自动刷新</span></label>
+      </div>
+    </div>
+    <p class="scroll-hint">左右滑动查看完整表格 →</p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ETF</th>
+            <th>跟踪指数</th>
+            <th class="num">规模(亿)</th>
+            <th class="num">成交额(亿)</th>
+            <th class="num">同时点倍数</th>
+            <th class="num">主动买卖差</th>
+            <th class="num">涨跌</th>
+            <th class="num">份额(亿份)</th>
+            <th class="num">近30日成交额</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="9" class="empty">正在载入数据…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="table-note" id="tableNote">—</p>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div class="panel-title">
+        <h3>放量排行</h3>
+        <p>同时点倍数 = 当前成交额 ÷（20 日均额 × 历史同时点完成比例）</p>
+      </div>
+      <span class="hint">1.0× = 与 20 日均额持平</span>
+    </div>
+    <div class="rank" id="rank"></div>
+  </section>
+
+  <footer class="foot">
+    <details>
+      <summary>数据口径与免责声明</summary>
+      <div class="notes">
+        <p><b>同时点对齐。</b>上午 11:30 的成交额只是半天，直接除全天 20 日均额没有意义。页面用每只 ETF 近 20 个完整交易日的 5 分钟 K 线，算出「到这个时刻平均已走完全天成交额的比例」，把分母同比例缩小后再比。表格里的「同时点倍数」是可比口径；下方小字「日均 ×」是原始进度，只作参考。</p>
+        <p><b>成交额 / 涨跌 / 规模 / 份额。</b>来自腾讯行情公开接口 <code>qt.gtimg.cn</code>，交易时段每 20 秒刷新；规模为「价格 × 场内份额」，不是基金净值口径。</p>
+        <p><b>20 日均额。</b>由新浪 5 分钟 K 线（<code>quotes.sina.cn</code>）逐日汇总成交额得到，取快照交易日之前的 20 个完整交易日，已与日 K 成交量交叉核对。</p>
+        <p><b>主动买卖差（推算）。</b>（外盘 − 内盘）÷（外盘 + 内盘）× 成交额。外盘是主动买、内盘是主动卖，这只是逐笔成交方向的推算，<b>不是资金净流入，不是基金申赎，也不含大宗交易</b>；ETF 一二级市场套利会稀释该信号，请勿据此判断任何机构的行为。</p>
+        <p><b>份额 / 申赎。</b>份额为腾讯行情披露的场内份额；申赎 =（本次快照份额 − 上一份快照份额）× 现价，是份额变化的市值估算，需要连续两日运行 <code>update_data.py</code> 才有值。部分市场（尤其沪市）的份额字段并非每日更新，可能出现整片标的不变的情况，此时不应解读为「没有申赎」。</p>
+        <p class="warnline">本页所有结论均为公开行情的量价推测，不能证明任何机构当日是否交易，不构成投资建议。数据来自第三方公开接口，可能延迟、缺失或存在口径差异，请以基金公司公告与交易所披露为准。投资有风险。</p>
+      </div>
+    </details>
+    <p class="sign" id="sign">—</p>
+  </footer>
+
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script src="assets/app.js"></script>
+</body>
+</html>
